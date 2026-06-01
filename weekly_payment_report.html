@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vetto — Pagamentos da semana (por campanha e vertical)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!--
+  ============================================================================
+  REPORT — Pagamentos da semana passada, por campanha + consolidado por vertical.
+  Estilo editorial Vetto (mesmo template de reports/). Edite SÓ o objeto `DATA`.
+  TASK: type='TASK', executed_at BRT 20–26/05, Avenia (payable), BRL/USD separados.
+  QA:   type='QA',   executed_at BRT 13–26/05, fórmula throughput por worker (BRL).
+  Referral e RPO: abas criadas e ZERADAS (não computadas neste ciclo).
+  Método: AGENTS.md / context/payment-ops.md → "Per-campaign spend report".
+  ============================================================================
+-->
+<style>
+  :root{
+    --paper:#faf7f0; --paper-2:#f3efe4; --card:#fffdf8; --ink:#051138; --muted:#7a7468;
+    --line:#e7e1d3; --line-strong:#d9d4c8; --accent:#755ee8; --accent-soft:#a78bfa;
+    --ocre:#b48a3b; --green:#3a6b4c; --terra:#c64a2a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font:15px/1.6 Inter,-apple-system,Segoe UI,Roboto,sans-serif;
+       padding:40px 28px;max-width:1080px;margin:auto;-webkit-font-smoothing:antialiased}
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+        border-bottom:1px solid var(--line-strong);padding-bottom:18px;margin-bottom:6px}
+  h1{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:38px;line-height:1.04;margin:.1em 0 0;letter-spacing:-.015em}
+  .standfirst{font-family:Fraunces,Georgia,serif;font-size:20px;line-height:1.5;color:#33405e;margin:16px 0 0;max-width:720px}
+  .standfirst::first-letter{-webkit-initial-letter:2;initial-letter:2;font-weight:600;color:var(--accent);margin-right:6px}
+  .meta{color:var(--muted);font-size:13px;margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);font-weight:600}
+  h2{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:20px;margin:38px 0 14px;
+     padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .grid{display:grid;gap:18px} .kpis{grid-template-columns:repeat(4,1fr)}
+  .charts{grid-template-columns:1fr 1fr} @media(max-width:820px){.kpis,.charts{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.kpis,.charts{grid-template-columns:1fr}}
+  .kpi{padding:18px 4px;border-top:2px solid var(--ink)}
+  .kpi .l{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+  .kpi .v{font-family:Fraunces,Georgia,serif;font-size:28px;font-weight:600;margin-top:6px;line-height:1}
+  .kpi .v.brl{color:var(--accent)} .kpi .v.usd{color:var(--ocre)}
+  .kpi .v.qa{color:var(--ink)} .kpi .v.zero{color:var(--muted)}
+  .kpi .s{color:var(--muted);font-size:12px;margin-top:6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;
+        box-shadow:0 1px 2px rgba(5,17,56,.04)}
+  .chart-title{font-weight:600;font-size:13px;margin-bottom:12px;color:var(--ink)}
+  canvas{max-height:300px}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:13.5px}
+  th,td{padding:8px 11px;border-bottom:1px solid var(--line);text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  th:nth-child(2),td:nth-child(2){text-align:left}
+  thead th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  tbody tr:hover{background:var(--paper-2)}
+  tbody .vsep td{border-top:1px solid var(--line-strong)}
+  tfoot td{font-weight:700;border-top:2px solid var(--line-strong)}
+  .vtag{font-size:11px;color:var(--muted)}
+  .note{color:var(--muted);font-size:13px;margin-top:8px;line-height:1.7}
+  code{background:var(--paper-2);padding:1px 6px;border-radius:5px;font-size:12.5px}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;
+         background:#efeafe;color:var(--accent);border:1px solid #ddd3fb;font-weight:600;vertical-align:middle}
+  .badge.zero{background:#f0ede4;color:var(--muted);border-color:var(--line-strong)}
+  .zerobox{background:var(--paper-2);border:1px dashed var(--line-strong);border-radius:12px;
+           padding:16px 18px;color:var(--muted);font-size:13.5px}
+  footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--line-strong);
+         color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  👇  EDITE APENAS ISTO                                                ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+<script>
+const DATA = {
+  title:    "Pagamentos da semana passada",
+  period:   "tasks 20–26/05 · QA 13–26/05",
+  paidWhen: "executados 27/05 (qua) → 31/05 (dom)",
+  source:   "ops.vetto (DB 35) · eixo executed_at (BRT) · semanas Wed→Tue · BRL e USD separados",
+  standfirst: "O que foi pago na semana passada, condensando tasks (20–26/05) e QA (13–26/05) por campanha e consolidado por vertical. Referral e RPO entram como abas, ainda zeradas.",
+  qaRateBRL: 200,
+  // QA por worker: throughput = casos/horas; >2.7 → horas×200; senão casos×(200/3). Pay-for-all.
+  campaigns: [
+    {v:"Coding / Automation", n:"Challenging Coding & Automation Scenarios",       t:44,  tb:5200,  tu:720,  qb:0},
+    {v:"Coding / Automation", n:"Conversation Role-Play in Coding",                t:129, tb:18300, tu:1500, qb:41453.33},
+    {v:"Coding / Automation", n:"Multi Turn Coding Conversation Evals",            t:28,  tb:4400,  tu:200,  qb:3156.67},
+    {v:"Safety", n:"Multi-turn Safety | Self-harm (Actors)",                       t:1,   tb:250,   tu:0,    qb:3.33},
+    {v:"Safety", n:"Multi-turn Safety | Self-harm Adversarial v2 — Eval",          t:0,   tb:0,     tu:0,    qb:0},
+    {v:"Safety", n:"Multi-turn Safety | Self-harm Adversarial v3",                 t:58,  tb:11600, tu:0,    qb:19373.33},
+    {v:"Safety", n:"Multi-turn Safety | Self-harm Adversarial v3 — Eval",          t:146, tb:29200, tu:0,    qb:20550},
+    {v:"Safety", n:"Political Debates Scenarios",                                  t:20,  tb:2000,  tu:0,    qb:0},
+    {v:"Safety", n:"Safety | Election Neutrality - Pilot",                         t:24,  tb:4200,  tu:120,  qb:1636.67},
+    {v:"Health", n:"Health - With External Data- Complete Evaluation",            t:4,   tb:1000,  tu:0,    qb:5356.67},
+    {v:"Health", n:"Health - With External Data- conversation only",              t:2,   tb:250,   tu:0,    qb:936.67},
+    {v:"Health", n:"Long Horizon - Health",                                        t:123, tb:41650, tu:280,  qb:0},
+    {v:"Wellness", n:"Mental Health Emergency Stories | v1",                        t:65,  tb:12600, tu:80,   qb:0},
+    {v:"Wellness", n:"Wellness - With External Data - Conversation only",           t:3,   tb:225,   tu:0,    qb:2756.67},
+    {v:"Wellness", n:"Wellness - With External Data - Evaluation Complete",         t:24,  tb:3600,  tu:0,    qb:9410},
+    {v:"Finance", n:"Finance - With External Data — Complete Evaluation",          t:18,  tb:4500,  tu:0,    qb:11543.33},
+    {v:"Finance", n:"Finance - With External Data - conversation only",            t:6,   tb:750,   tu:0,    qb:2946.67},
+    {v:"Finance", n:"Long Horizon Multi Turn — Finance",                           t:78,  tb:26250, tu:0,    qb:0},
+    {v:"Legal", n:"Legal - With External Data - Complete Evaluation",              t:82,  tb:7950,  tu:870,  qb:12696.67},
+    {v:"Legal", n:"Legal - With External Data - conversation only",                t:50,  tb:3225,  tu:105,  qb:12136.67},
+    {v:"Legal", n:"Long Horizon - Legal",                                          t:31,  tb:10850, tu:0,    qb:0},
+    {v:"Education", n:"Education - With External Data - Complete Evaluation",       t:10,  tb:1500,  tu:0,    qb:7973.33},
+    {v:"Education", n:"Education - With External Data - conversation only",         t:1,   tb:75,    tu:0,    qb:453.33},
+    {v:"Shopping", n:"Shopping - With External Data - Complete Evaluation",         t:24,  tb:3600,  tu:0,    qb:10233.33},
+    {v:"Shopping", n:"Shopping - With External Data - conversation only",           t:4,   tb:300,   tu:0,    qb:2876.67},
+    {v:"Travel", n:"Travel & Local - Conversation Only",                           t:1,   tb:75,    tu:0,    qb:66.67},
+    {v:"Travel", n:"Travel - With External Data",                                  t:1,   tb:75,    tu:0,    qb:793.33},
+    {v:"Travel", n:"Travel - With External Data - Evaluation Complete",            t:11,  tb:1650,  tu:0,    qb:9626.67},
+    {v:"Travel", n:"Long Horizon - Travel",                                        t:19,  tb:6650,  tu:0,    qb:0},
+    {v:"Consulting", n:"Long Horizon - Consulting",                                t:31,  tb:9800,  tu:70,   qb:0},
+    {v:"Engineering", n:"Long Horizon - Engineering",                              t:26,  tb:9100,  tu:0,    qb:0},
+    {v:"Materials / Content", n:"Long Horizon - Materials Creation",               t:3,   tb:1050,  tu:0,    qb:0},
+    {v:"Other (LH Multi Turn)", n:"Long Horizon Multi Turn",                       t:36,  tb:12600, tu:0,    qb:0},
+  ],
+  qaMinutesTotal: 57205,  // soma de qa_minutes (13–26/05) — para o KPI de horas
+  qaCasesTotal:   3128,
+  notes: [
+    "TASK = type='TASK', pago via Avenia (payable_item), eixo <code>executed_at</code> BRT 20–26/05; BRL e USD separados (USD = worker internacional que recebeu payable em USD).",
+    "QA = type='QA', eixo <code>executed_at</code> BRT 13–26/05 (ciclo quinzenal). Valor pela fórmula de throughput POR WORKER (throughput=casos/horas; >2,7 → horas×R$200; senão casos×R$200/3); pay-for-all (cada passada conta).",
+    "Referral e RPO: abas criadas e ZERADAS — não computadas neste ciclo. QA aqui inclui todos os workers; QA de worker RPO/internacional ainda não foi separado para a aba RPO.",
+    "Total BRL = TASK BRL (Avenia) + QA BRL. USD não é somado ao BRL. Valores exibidos arredondados; QA carrega centavos (preservados no objeto DATA para auditoria).",
+    "Eixo de data = data da TASK (executed_at), não a data de aprovação do pagável — esta última infla ~2,1× (ver context/metabase-sql.md).",
+  ],
+};
+</script>
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  👆  FIM DA ÁREA EDITÁVEL                                             ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+
+  <div class="head">
+    <div>
+      <div class="eyebrow" id="eyebrow"></div>
+      <h1 id="title"></h1>
+    </div>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 288.99" style="height:30px;width:auto;display:block;opacity:.92" aria-label="Vetto" fill="#051138">
+  <path d="M421.25,84.43c-9.15-9.81-20.36-17.44-33.61-22.87-13.26-5.43-28.51-8.16-45.75-8.16-20.68,0-39.25,4.91-55.69,14.72-16.45,9.81-29.51,23.21-39.18,40.18-9.68,16.97-14.52,36.34-14.52,58.08s4.64,40.05,13.92,57.28c9.28,17.24,22.41,30.97,39.38,41.17,16.97,10.21,36.99,15.31,60.07,15.31h77.38c1.2,0,2.17-.97,2.17-2.17v-47.37c0-1.2-.97-2.17-2.17-2.17h-77.38c-11.67,0-21.55-2.58-29.63-7.76-8.09-5.17-14.06-12.39-17.9-21.68-1.98-4.78-3.3-9.96-3.98-15.51h150.58c.94,0,1.8-.59,2.07-1.49.79-2.6,1.36-5.62,1.69-9.05.4-4.11.6-8.28.6-12.53,0-15.11-2.39-29.1-7.16-41.97-4.77-12.86-11.74-24.2-20.88-34.01ZM315.24,108.69c7.42-5.03,16.31-7.56,26.65-7.56s19.55,2.58,26.85,7.76c7.29,5.17,12.39,12.2,15.31,21.08,1.01,3.09,1.67,6.35,2.01,9.75h-90.1c.69-3.08,1.53-6.01,2.57-8.75,3.71-9.81,9.28-17.23,16.71-22.28Z"/>
+  <path d="M738.26,58.17h-43.08V11.02c0-1.2-.97-2.17-2.17-2.17h-55.32c-1.2,0-2.17.97-2.17,2.17v47.15h-67.18V11.02c0-1.2-.97-2.17-2.17-2.17h-55.32c-1.2,0-2.17.97-2.17,2.17v47.15h-43.04c-1.2,0-2.17.97-2.17,2.17v47.37c0,1.2.97,2.17,2.17,2.17h43.04v168.08c0,1.2.97,2.17,2.17,2.17h55.32c1.2,0,2.17-.97,2.17-2.17V109.89h67.18v168.08c0,1.2.97,2.17,2.17,2.17h55.32c1.2,0,2.17-.97,2.17-2.17V109.89h43.08c1.2,0,2.17-.97,2.17-2.17v-47.37c0-1.2-.97-2.17-2.17-2.17Z"/>
+  <path d="M974.59,108.3c-10.48-16.97-24.46-30.36-41.97-40.18-17.5-9.81-36.99-14.72-58.48-14.72s-41.04,4.91-58.67,14.72c-17.64,9.81-31.69,23.21-42.16,40.18-10.48,16.97-15.71,36.47-15.71,58.47s5.23,41.17,15.71,58.28c10.47,17.1,24.53,30.57,42.16,40.37,17.63,9.81,37.19,14.72,58.67,14.72s40.97-4.9,58.48-14.72c17.5-9.81,31.49-23.27,41.97-40.37,10.47-17.11,15.71-36.53,15.71-58.28s-5.24-41.5-15.71-58.47ZM921.68,197.8c-4.64,9.02-11.01,16.05-19.09,21.08-8.09,5.04-17.57,7.56-28.44,7.56s-20.42-2.52-28.64-7.56c-8.22-5.03-14.66-12.06-19.29-21.08-4.64-9.01-6.96-19.35-6.96-31.03s2.32-21.94,6.96-30.83c4.64-8.88,11.07-15.91,19.29-21.08,8.22-5.17,17.76-7.76,28.64-7.76s20.35,2.58,28.44,7.76c8.09,5.17,14.45,12.2,19.09,21.08,4.64,8.89,6.96,19.16,6.96,30.83s-2.33,22.01-6.96,31.03Z"/>
+  <path d="M121.05,54.45H11.88c-1.62,0-2.67,1.7-1.94,3.15l54.59,109.17c.8,1.6,3.09,1.6,3.89,0l54.59-109.17c.72-1.44-.33-3.15-1.94-3.15Z"/>
+  <path d="M253.76,8.85h-59.21c-.82,0-1.58.47-1.94,1.2l-103.35,206.4.13.25-.38.75,13.49,27.02c.38.79.82,1.51,1.27,2.21l15.29,30.57c.8,1.6,3.09,1.6,3.89,0L255.7,12c.72-1.44-.33-3.15-1.94-3.15Z"/>
+</svg>
+  </div>
+  <p class="standfirst" id="standfirst"></p>
+  <div class="meta" id="subtitle"></div>
+
+  <h2>Visão geral</h2>
+  <div class="grid kpis">
+    <div class="kpi"><div class="l">Total pago (BRL)</div><div class="v brl" id="kBrl"></div><div class="s">Avenia (task) + QA</div></div>
+    <div class="kpi"><div class="l">Total pago (USD)</div><div class="v usd" id="kUsd"></div><div class="s">workers internacionais (payable USD)</div></div>
+    <div class="kpi"><div class="l">QA (BRL)</div><div class="v qa" id="kQa"></div><div class="s" id="kQaSub"></div></div>
+    <div class="kpi"><div class="l">Referral + RPO</div><div class="v zero" id="kZero">R$ 0</div><div class="s">abas zeradas (pendente)</div></div>
+  </div>
+
+  <h2>Por vertical</h2>
+  <div class="grid charts">
+    <div class="card"><div class="chart-title">Total BRL por vertical (task + QA)</div><canvas id="vertTotal"></canvas></div>
+    <div class="card"><div class="chart-title">Composição BRL por vertical — Task (Avenia) vs QA</div><canvas id="vertSplit"></canvas></div>
+  </div>
+  <div class="card" style="padding:6px 8px;margin-top:18px">
+  <table>
+    <thead><tr><th>Vertical</th><th></th><th>Task BRL</th><th>QA BRL</th><th>Total BRL</th><th>USD</th><th>Referral</th><th>RPO</th></tr></thead>
+    <tbody id="vbody"></tbody>
+    <tfoot><tr><td>TOTAL</td><td></td><td id="vtA"></td><td id="vtQ"></td><td id="vtT"></td><td id="vtU"></td><td>R$ 0</td><td>R$ 0</td></tr></tfoot>
+  </table>
+  </div>
+
+  <h2>Por campanha</h2>
+  <div class="card"><canvas id="campBrl" style="max-height:560px"></canvas></div>
+  <div class="card" style="padding:6px 8px;margin-top:18px">
+  <table>
+    <thead><tr><th>Campanha</th><th>Vertical</th><th>Tasks</th><th>Task BRL</th><th>Task USD</th><th>QA BRL</th><th>Total BRL</th></tr></thead>
+    <tbody id="cbody"></tbody>
+    <tfoot><tr><td>TOTAL</td><td></td><td id="ctN"></td><td id="ctTB"></td><td id="ctTU"></td><td id="ctQ"></td><td id="ctT"></td></tr></tfoot>
+  </table>
+  </div>
+
+  <h2>Referral <span class="badge zero">zerado</span></h2>
+  <div class="zerobox" id="refBox"></div>
+
+  <h2>RPO <span class="badge zero">zerado</span></h2>
+  <div class="zerobox" id="rpoBox"></div>
+
+  <h2>Premissas</h2>
+  <div class="note" id="notes"></div>
+
+  <footer>
+    <span>Vetto · report de pagamento</span>
+    <span id="footmeta"></span>
+  </footer>
+
+<script>
+const D = DATA;
+const sum = (a,k) => a.reduce((s,x)=>s+(k?x[k]:x),0);
+const brl = n => 'R$ '+Math.round(n).toLocaleString('pt-BR');
+const usd = n => 'US$ '+Math.round(n).toLocaleString('pt-BR');
+const ptn = n => Math.round(n).toLocaleString('pt-BR');
+
+// total por campanha
+D.campaigns.forEach(c => { c.total = c.tb + c.qb; });
+
+// agrega por vertical
+const vmap = {};
+D.campaigns.forEach(c=>{
+  const v = vmap[c.v] || (vmap[c.v]={v:c.v, tb:0, qb:0, tu:0, total:0, n:0});
+  v.tb+=c.tb; v.qb+=c.qb; v.tu+=c.tu; v.total+=c.total; v.n+=c.t;
+});
+const verticals = Object.values(vmap).sort((a,b)=>b.total-a.total);
+
+const totBrl = sum(D.campaigns,'tb')+sum(D.campaigns,'qb');
+const totTaskBrl = sum(D.campaigns,'tb');
+const totQaBrl = sum(D.campaigns,'qb');
+const totUsd = sum(D.campaigns,'tu');
+
+document.getElementById('eyebrow').textContent = 'Report de pagamento · semana passada';
+const titleEl=document.getElementById('title');
+titleEl.textContent = D.title;
+titleEl.insertAdjacentHTML('beforeend',' <span class="badge">'+D.period+'</span>');
+document.getElementById('standfirst').textContent = D.standfirst;
+document.getElementById('subtitle').textContent = `${D.source} · pagamentos ${D.paidWhen}`;
+document.getElementById('footmeta').textContent = D.source;
+
+// KPIs
+kBrl.textContent = brl(totBrl);
+kUsd.textContent = usd(totUsd);
+kQa.textContent  = brl(totQaBrl);
+kQaSub.textContent = `${Math.floor(D.qaMinutesTotal/60)}h ${String(D.qaMinutesTotal%60).padStart(2,'0')} · ${ptn(D.qaCasesTotal)} casos · 13–26/05`;
+
+// Chart.js — tema editorial
+Chart.defaults.font.family = 'Inter, sans-serif';
+Chart.defaults.color = '#7a7468';
+const grid={color:'#e7e1d3'}, tick={color:'#7a7468'};
+const C={avenia:'#755ee8',qa:'#a78bfa',total:'#755ee8'};
+const baseOpts=(stacked=false)=>({responsive:true,
+  plugins:{legend:{labels:{color:'#051138',boxWidth:12,boxHeight:12,usePointStyle:true}}},
+  scales:{x:{stacked,grid:{display:false},ticks:tick},y:{stacked,grid,ticks:tick,beginAtZero:true}}});
+
+// total BRL por vertical (horizontal)
+new Chart(vertTotal,{type:'bar',data:{labels:verticals.map(v=>v.v),datasets:[
+  {label:'Total BRL',data:verticals.map(v=>Math.round(v.total)),backgroundColor:C.total,borderRadius:4}]},
+  options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},
+  scales:{x:{grid,ticks:tick,beginAtZero:true},y:{grid:{display:false},ticks:{color:'#051138'}}}}});
+
+// composição task vs QA por vertical (stacked horizontal)
+new Chart(vertSplit,{type:'bar',data:{labels:verticals.map(v=>v.v),datasets:[
+  {label:'Task (Avenia)',data:verticals.map(v=>Math.round(v.tb)),backgroundColor:C.avenia,borderRadius:4},
+  {label:'QA',data:verticals.map(v=>Math.round(v.qb)),backgroundColor:C.qa,borderRadius:4}]},
+  options:{indexAxis:'y',responsive:true,
+  plugins:{legend:{labels:{color:'#051138',boxWidth:12,boxHeight:12,usePointStyle:true}}},
+  scales:{x:{stacked:true,grid,ticks:tick,beginAtZero:true},y:{stacked:true,grid:{display:false},ticks:{color:'#051138'}}}}});
+
+// por campanha (horizontal, ordenado)
+const cs=[...D.campaigns].sort((a,b)=>b.total-a.total);
+new Chart(campBrl,{type:'bar',data:{labels:cs.map(c=>c.n),datasets:[
+  {label:'Task BRL',data:cs.map(c=>Math.round(c.tb)),backgroundColor:C.avenia,borderRadius:4},
+  {label:'QA BRL',data:cs.map(c=>Math.round(c.qb)),backgroundColor:C.qa,borderRadius:4}]},
+  options:{indexAxis:'y',responsive:true,
+  plugins:{legend:{labels:{color:'#051138',boxWidth:12,boxHeight:12,usePointStyle:true}}},
+  scales:{x:{stacked:true,grid,ticks:tick,beginAtZero:true},y:{stacked:true,grid:{display:false},ticks:{color:'#051138',font:{size:10}}}}}});
+
+// tabela por vertical
+const vb=document.getElementById('vbody');
+verticals.forEach(v=>{
+  vb.insertAdjacentHTML('beforeend',`<tr><td>${v.v}</td><td class="vtag">${v.n} tasks</td>
+    <td>${brl(v.tb)}</td><td>${brl(v.qb)}</td><td>${brl(v.total)}</td>
+    <td>${v.tu?usd(v.tu):'—'}</td><td>R$ 0</td><td>R$ 0</td></tr>`);
+});
+vtA.textContent=brl(totTaskBrl);vtQ.textContent=brl(totQaBrl);vtT.textContent=brl(totBrl);
+vtU.textContent=usd(totUsd);
+
+// tabela por campanha (agrupada por vertical na ordem do ranking de verticais)
+const cb=document.getElementById('cbody');
+verticals.forEach(v=>{
+  const rows=D.campaigns.filter(c=>c.v===v.v).sort((a,b)=>b.total-a.total);
+  rows.forEach((c,i)=>{
+    cb.insertAdjacentHTML('beforeend',`<tr class="${i===0?'vsep':''}"><td>${c.n}</td><td class="vtag">${c.v}</td>
+      <td>${ptn(c.t)}</td><td>${brl(c.tb)}</td><td>${c.tu?usd(c.tu):'—'}</td>
+      <td>${c.qb?brl(c.qb):'—'}</td><td>${brl(c.total)}</td></tr>`);
+  });
+});
+ctN.textContent=ptn(sum(D.campaigns,'t'));ctTB.textContent=brl(totTaskBrl);
+ctTU.textContent=usd(totUsd);ctQ.textContent=brl(totQaBrl);ctT.textContent=brl(totBrl);
+
+// abas zeradas
+document.getElementById('refBox').innerHTML =
+  '<b>Referral — R$ 0,00 / US$ 0,00.</b> Aba criada conforme solicitado, ainda não computada neste ciclo. '+
+  'Normalizar <code>Referal / Referral / Referral DM / DM</code> → <code>Referral</code> na camada de report, preservando o valor bruto na auditoria.';
+document.getElementById('rpoBox').innerHTML =
+  '<b>RPO — R$ 0,00 / US$ 0,00.</b> Aba criada conforme solicitado, ainda não computada neste ciclo. '+
+  'RPO pode ser pago a empresa-parceira (não indivíduo) e via fluxo externo (Rippling); identificar por <code>ignored_reviewer_emails.type=\'RPO\'</code> + domínio (juppiter/terac/lamontsandco/toptal) e validar antes de incluir.';
+
+document.getElementById('notes').innerHTML = D.notes.map(n=>'• '+n).join('<br>');
+</script>
+</body>
+</html>
