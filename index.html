@@ -37,7 +37,7 @@
   .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);font-weight:600}
   h2{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:20px;margin:38px 0 14px;
      padding-bottom:8px;border-bottom:1px solid var(--line)}
-  .grid{display:grid;gap:18px} .kpis{grid-template-columns:repeat(4,1fr)}
+  .grid{display:grid;gap:18px} .kpis{grid-template-columns:repeat(5,1fr)}
   .charts{grid-template-columns:1fr 1fr} @media(max-width:820px){.kpis,.charts{grid-template-columns:1fr 1fr}}
   @media(max-width:560px){.kpis,.charts{grid-template-columns:1fr}}
   .kpi{padding:18px 4px;border-top:2px solid var(--ink)}
@@ -121,10 +121,41 @@ const DATA = {
   ],
   qaMinutesTotal: 57205,  // soma de qa_minutes (13–26/05) — para o KPI de horas
   qaCasesTotal:   3128,
+  // RPO — só QUANTIDADE de tasks por enquanto. Identificação por DOMÍNIO de e-mail (@), tasks externas (sem payable), executed_at 20–26/05.
+  rpoTotal: 65,
+  rpoDomainSet: "expert.terac.com, juppiter.in, juppiterailabs.com, juppiter.com, jupiter.in, toptal.com, lamontsandco.com",
+  rpoCompanies: [
+    {c:"Terac",    dom:"expert.terac.com",                tasks:43},
+    {c:"Juppiter", dom:"juppiter.in, juppiterailabs.com", tasks:13},
+    {c:"Toptal",   dom:"toptal.com",                      tasks:9},
+    {c:"Lamonts",  dom:"lamontsandco.com",                tasks:0},
+  ],
+  rpoByCampaign: {
+    "Legal - With External Data - conversation only":      27,
+    "Legal - With External Data - Complete Evaluation":    14,
+    "Conversation Role-Play in Coding":                    6,
+    "Challenging Coding & Automation Scenarios":           5,
+    "Finance - With External Data — Complete Evaluation":  3,
+    "Wellness - With External Data - Conversation only":   3,
+    "Finance - With External Data - conversation only":    3,
+    "Wellness - With External Data - Evaluation Complete": 2,
+    "Health - With External Data- Complete Evaluation":    1,
+    "Health - With External Data- conversation only":      1,
+  },
+  // Referral — fonte da verdade: planilha "Referral Payment" (Google Sheets). Válidos × R$100. Janela Date BRT 20–26/05.
+  referral: {
+    rate: 100,
+    byStatus: [
+      {s:"Válido (pago)", n:13, pay:true},
+      {s:"Inválido",      n:2,  pay:false},
+      {s:"Time Interno",  n:1,  pay:false},
+    ],
+  },
   notes: [
     "TASK = type='TASK', pago via Avenia (payable_item), eixo <code>executed_at</code> BRT 20–26/05; BRL e USD separados (USD = worker internacional que recebeu payable em USD).",
     "QA = type='QA', eixo <code>executed_at</code> BRT 13–26/05 (ciclo quinzenal). Valor pela fórmula de throughput POR WORKER (throughput=casos/horas; >2,7 → horas×R$200; senão casos×R$200/3); pay-for-all (cada passada conta).",
-    "Referral e RPO: abas criadas e ZERADAS — não computadas neste ciclo. QA aqui inclui todos os workers; QA de worker RPO/internacional ainda não foi separado para a aba RPO.",
+    "RPO: só QUANTIDADE de tasks por enquanto (sem valor). Identificado por DOMÍNIO de e-mail (@): Terac (expert.terac.com), Juppiter (juppiter.in/juppiterailabs.com), Toptal (toptal.com), Lamonts (lamontsandco.com). Tasks externas (sem payable Avenia) → não duplicam o BRL do report. Valoração USD pela tarifa da campanha fica pro futuro.",
+    "Referral: fonte = planilha Referral Payment (Google Sheets, fonte da verdade). Indicações Válidas × R$ 100; janela coluna Date em BRT 20–26/05. Classe própria (não por vertical), mas somada ao Total pago (BRL).",
     "Total BRL = TASK BRL (Avenia) + QA BRL. USD não é somado ao BRL. Valores exibidos arredondados; QA carrega centavos (preservados no objeto DATA para auditoria).",
     "Eixo de data = data da TASK (executed_at), não a data de aprovação do pagável — esta última infla ~2,1× (ver context/metabase-sql.md).",
   ],
@@ -152,10 +183,11 @@ const DATA = {
 
   <h2>Visão geral</h2>
   <div class="grid kpis">
-    <div class="kpi"><div class="l">Total pago (BRL)</div><div class="v brl" id="kBrl"></div><div class="s">Avenia (task) + QA</div></div>
+    <div class="kpi"><div class="l">Total pago (BRL)</div><div class="v brl" id="kBrl"></div><div class="s">Avenia + QA + Referral</div></div>
     <div class="kpi"><div class="l">Total pago (USD)</div><div class="v usd" id="kUsd"></div><div class="s">workers internacionais (payable USD)</div></div>
     <div class="kpi"><div class="l">QA (BRL)</div><div class="v qa" id="kQa"></div><div class="s" id="kQaSub"></div></div>
-    <div class="kpi"><div class="l">Referral + RPO</div><div class="v zero" id="kZero">R$ 0</div><div class="s">abas zeradas (pendente)</div></div>
+    <div class="kpi"><div class="l">Referral (BRL)</div><div class="v brl" id="kRef"></div><div class="s" id="kRefSub"></div></div>
+    <div class="kpi"><div class="l">RPO (tasks)</div><div class="v qa" id="kRpo"></div><div class="s">externas · só quantidade</div></div>
   </div>
 
   <h2>Por vertical</h2>
@@ -165,9 +197,9 @@ const DATA = {
   </div>
   <div class="card" style="padding:6px 8px;margin-top:18px">
   <table>
-    <thead><tr><th>Vertical</th><th></th><th>Task BRL</th><th>QA BRL</th><th>Total BRL</th><th>USD</th><th>Referral</th><th>RPO</th></tr></thead>
+    <thead><tr><th>Vertical</th><th></th><th>Task BRL</th><th>QA BRL</th><th>Total BRL</th><th>USD</th><th>Referral</th><th>RPO (tasks)</th></tr></thead>
     <tbody id="vbody"></tbody>
-    <tfoot><tr><td>TOTAL</td><td></td><td id="vtA"></td><td id="vtQ"></td><td id="vtT"></td><td id="vtU"></td><td>R$ 0</td><td>R$ 0</td></tr></tfoot>
+    <tfoot><tr><td>TOTAL</td><td></td><td id="vtA"></td><td id="vtQ"></td><td id="vtT"></td><td id="vtU"></td><td id="vtRef"></td><td id="vtR"></td></tr></tfoot>
   </table>
   </div>
 
@@ -175,17 +207,30 @@ const DATA = {
   <div class="card"><canvas id="campBrl" style="max-height:560px"></canvas></div>
   <div class="card" style="padding:6px 8px;margin-top:18px">
   <table>
-    <thead><tr><th>Campanha</th><th>Vertical</th><th>Tasks</th><th>Task BRL</th><th>Task USD</th><th>QA BRL</th><th>Total BRL</th></tr></thead>
+    <thead><tr><th>Campanha</th><th>Vertical</th><th>Tasks</th><th>Task BRL</th><th>Task USD</th><th>QA BRL</th><th>Total BRL</th><th>RPO tasks</th></tr></thead>
     <tbody id="cbody"></tbody>
-    <tfoot><tr><td>TOTAL</td><td></td><td id="ctN"></td><td id="ctTB"></td><td id="ctTU"></td><td id="ctQ"></td><td id="ctT"></td></tr></tfoot>
+    <tfoot><tr><td>TOTAL</td><td></td><td id="ctN"></td><td id="ctTB"></td><td id="ctTU"></td><td id="ctQ"></td><td id="ctT"></td><td id="ctR"></td></tr></tfoot>
   </table>
   </div>
 
-  <h2>Referral <span class="badge zero">zerado</span></h2>
-  <div class="zerobox" id="refBox"></div>
+  <h2>Referral <span class="badge" id="refBadge"></span></h2>
+  <div class="card" style="padding:6px 8px">
+  <table>
+    <thead><tr><th>Indicações</th><th>Valor</th></tr></thead>
+    <tbody id="refBody"></tbody>
+  </table>
+  </div>
+  <div class="note" id="refNote"></div>
 
-  <h2>RPO <span class="badge zero">zerado</span></h2>
-  <div class="zerobox" id="rpoBox"></div>
+  <h2>RPO <span class="badge" id="rpoBadge"></span></h2>
+  <div class="card" style="padding:6px 8px">
+  <table>
+    <thead><tr><th>Empresa</th><th>Domínio(s)</th><th>Tasks</th></tr></thead>
+    <tbody id="rpoCo"></tbody>
+    <tfoot><tr><td>TOTAL</td><td></td><td id="rpoT"></td></tr></tfoot>
+  </table>
+  </div>
+  <div class="note" id="rpoNote"></div>
 
   <h2>Premissas</h2>
   <div class="note" id="notes"></div>
@@ -202,21 +247,23 @@ const brl = n => 'R$ '+Math.round(n).toLocaleString('pt-BR');
 const usd = n => 'US$ '+Math.round(n).toLocaleString('pt-BR');
 const ptn = n => Math.round(n).toLocaleString('pt-BR');
 
-// total por campanha
-D.campaigns.forEach(c => { c.total = c.tb + c.qb; });
+// total por campanha + RPO (qtd de tasks)
+D.campaigns.forEach(c => { c.total = c.tb + c.qb; c.rpo = D.rpoByCampaign[c.n] || 0; });
 
 // agrega por vertical
 const vmap = {};
 D.campaigns.forEach(c=>{
-  const v = vmap[c.v] || (vmap[c.v]={v:c.v, tb:0, qb:0, tu:0, total:0, n:0});
-  v.tb+=c.tb; v.qb+=c.qb; v.tu+=c.tu; v.total+=c.total; v.n+=c.t;
+  const v = vmap[c.v] || (vmap[c.v]={v:c.v, tb:0, qb:0, tu:0, total:0, n:0, rpo:0});
+  v.tb+=c.tb; v.qb+=c.qb; v.tu+=c.tu; v.total+=c.total; v.n+=c.t; v.rpo+=c.rpo;
 });
 const verticals = Object.values(vmap).sort((a,b)=>b.total-a.total);
 
-const totBrl = sum(D.campaigns,'tb')+sum(D.campaigns,'qb');
 const totTaskBrl = sum(D.campaigns,'tb');
 const totQaBrl = sum(D.campaigns,'qb');
 const totUsd = sum(D.campaigns,'tu');
+const refPay = D.referral.byStatus.filter(s=>s.pay).reduce((a,s)=>a+s.n,0);
+const refBRL = refPay * D.referral.rate;
+const totBrl = totTaskBrl + totQaBrl + refBRL;   // total pago BRL = Avenia + QA + Referral
 
 document.getElementById('eyebrow').textContent = 'Report de pagamento · semana passada';
 const titleEl=document.getElementById('title');
@@ -231,6 +278,9 @@ kBrl.textContent = brl(totBrl);
 kUsd.textContent = usd(totUsd);
 kQa.textContent  = brl(totQaBrl);
 kQaSub.textContent = `${Math.floor(D.qaMinutesTotal/60)}h ${String(D.qaMinutesTotal%60).padStart(2,'0')} · ${ptn(D.qaCasesTotal)} casos · 13–26/05`;
+kRpo.textContent = ptn(D.rpoTotal)+' tasks';
+kRef.textContent = brl(refBRL);
+kRefSub.textContent = refPay+' indicações · R$ 100/un';
 
 // Chart.js — tema editorial
 Chart.defaults.font.family = 'Inter, sans-serif';
@@ -269,10 +319,10 @@ const vb=document.getElementById('vbody');
 verticals.forEach(v=>{
   vb.insertAdjacentHTML('beforeend',`<tr><td>${v.v}</td><td class="vtag">${v.n} tasks</td>
     <td>${brl(v.tb)}</td><td>${brl(v.qb)}</td><td>${brl(v.total)}</td>
-    <td>${v.tu?usd(v.tu):'—'}</td><td>R$ 0</td><td>R$ 0</td></tr>`);
+    <td>${v.tu?usd(v.tu):'—'}</td><td>R$ 0</td><td>${v.rpo||'—'}</td></tr>`);
 });
-vtA.textContent=brl(totTaskBrl);vtQ.textContent=brl(totQaBrl);vtT.textContent=brl(totBrl);
-vtU.textContent=usd(totUsd);
+vtA.textContent=brl(totTaskBrl);vtQ.textContent=brl(totQaBrl);vtT.textContent=brl(totTaskBrl+totQaBrl);
+vtU.textContent=usd(totUsd);vtR.textContent=ptn(D.rpoTotal);vtRef.textContent=brl(refBRL);
 
 // tabela por campanha (agrupada por vertical na ordem do ranking de verticais)
 const cb=document.getElementById('cbody');
@@ -281,19 +331,29 @@ verticals.forEach(v=>{
   rows.forEach((c,i)=>{
     cb.insertAdjacentHTML('beforeend',`<tr class="${i===0?'vsep':''}"><td>${c.n}</td><td class="vtag">${c.v}</td>
       <td>${ptn(c.t)}</td><td>${brl(c.tb)}</td><td>${c.tu?usd(c.tu):'—'}</td>
-      <td>${c.qb?brl(c.qb):'—'}</td><td>${brl(c.total)}</td></tr>`);
+      <td>${c.qb?brl(c.qb):'—'}</td><td>${brl(c.total)}</td><td>${c.rpo||'—'}</td></tr>`);
   });
 });
 ctN.textContent=ptn(sum(D.campaigns,'t'));ctTB.textContent=brl(totTaskBrl);
-ctTU.textContent=usd(totUsd);ctQ.textContent=brl(totQaBrl);ctT.textContent=brl(totBrl);
+ctTU.textContent=usd(totUsd);ctQ.textContent=brl(totQaBrl);ctT.textContent=brl(totTaskBrl+totQaBrl);ctR.textContent=ptn(D.rpoTotal);
 
 // abas zeradas
-document.getElementById('refBox').innerHTML =
-  '<b>Referral — R$ 0,00 / US$ 0,00.</b> Aba criada conforme solicitado, ainda não computada neste ciclo. '+
-  'Normalizar <code>Referal / Referral / Referral DM / DM</code> → <code>Referral</code> na camada de report, preservando o valor bruto na auditoria.';
-document.getElementById('rpoBox').innerHTML =
-  '<b>RPO — R$ 0,00 / US$ 0,00.</b> Aba criada conforme solicitado, ainda não computada neste ciclo. '+
-  'RPO pode ser pago a empresa-parceira (não indivíduo) e via fluxo externo (Rippling); identificar por <code>ignored_reviewer_emails.type=\'RPO\'</code> + domínio (juppiter/terac/lamontsandco/toptal) e validar antes de incluir.';
+document.getElementById('refBadge').textContent = brl(refBRL)+' · '+refPay+' indicações';
+document.getElementById('refBody').insertAdjacentHTML('beforeend',`<tr><td>${refPay}</td><td>${brl(refBRL)}</td></tr>`);
+document.getElementById('refNote').innerHTML =
+  'Fonte da verdade: planilha <b>Referral Payment</b> (Google Sheets · daniel@vetto.ai). '+
+  'Elegível = <code>Status=\'Válido\'</code> (= <code>Pago?=TRUE</code>): '+refPay+' válidas × R$ 100. Excluídas 3 (2 Inválido, 1 Time Interno). '+
+  'Janela: coluna <code>Date</code> em BRT [20/05, 27/05). Classe própria (referral de reviewer) — não distribuída por vertical/campanha, mas somada ao Total pago (BRL).';
+document.getElementById('rpoBadge').textContent = ptn(D.rpoTotal)+' tasks · só quantidade';
+const rco=document.getElementById('rpoCo');
+[...D.rpoCompanies].sort((a,b)=>b.tasks-a.tasks).forEach(co=>{
+  rco.insertAdjacentHTML('beforeend',`<tr><td>${co.c}</td><td class="vtag">${co.dom}</td><td>${co.tasks?ptn(co.tasks):'—'}</td></tr>`);
+});
+document.getElementById('rpoT').textContent = ptn(D.rpoTotal);
+document.getElementById('rpoNote').innerHTML =
+  'RPO identificado por <b>domínio de e-mail (@)</b>: <code>'+D.rpoDomainSet+'</code>. '+
+  'Tasks <b>externas</b> (sem payable Avenia) → não duplicam o BRL do report. '+
+  'Por enquanto só <b>quantidade de tasks</b> (sem valor); valoração pela tarifa USD da campanha fica pro futuro. Janela executed_at 20–26/05 BRT.';
 
 document.getElementById('notes').innerHTML = D.notes.map(n=>'• '+n).join('<br>');
 </script>
